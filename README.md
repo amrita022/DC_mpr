@@ -1,4 +1,4 @@
-# EventBook — Distributed Event Ticket Booking System
+# GrandTix — Distributed Event Ticket Booking System
 
 > A production-grade distributed ticketing platform built with the MERN stack, demonstrating core distributed systems concepts including load balancing, fault tolerance, logical clocks, and distributed mutual exclusion.
 
@@ -21,7 +21,7 @@
 
 ## Overview
 
-EventBook is a full-stack distributed event ticketing system that simulates how large-scale platforms like BookMyShow or Ticketmaster handle thousands of concurrent booking requests. The system is designed to demonstrate real-world distributed computing challenges — including race conditions during concurrent seat booking, node failures, and load distribution across multiple worker nodes.
+GrandTix is a full-stack distributed event ticketing system that simulates how large-scale platforms like BookMyShow or Ticketmaster handle thousands of concurrent booking requests. The system is designed to demonstrate real-world distributed computing challenges — including race conditions during concurrent seat booking, node failures, and load distribution across multiple worker nodes.
 
 The core challenge this system solves: **How do you ensure no two users book the same seat simultaneously, even when requests hit different servers at the same time?**
 
@@ -163,8 +163,8 @@ Three load balancing strategies are implemented for distributing booking request
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/eventbook.git
-cd eventbook
+git clone https://github.com/yourusername/grandtix.git
+cd grandtix
 
 # Install backend dependencies
 cd backend
@@ -291,7 +291,7 @@ curl -X POST http://localhost:5001/api/distributed/simulate/recovery \
 ## Project Structure
 
 ```
-eventbook/
+grandtix/
 ├── backend/
 │   └── src/
 │       ├── config/
