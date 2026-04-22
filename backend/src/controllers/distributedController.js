@@ -139,9 +139,19 @@ const simulateBookingWithLoadBalancer = async (req, res) => {
 const simulateNodeFailure = async (req, res) => {
   try {
     const { nodeId } = req.body;
+    const node = nodeRegistry.getNodes().find(n => n.id === nodeId);
+
+    if (!node) {
+      return res.status(404).json({ message: `Node ${nodeId} not found` });
+    }
 
     nodeRegistry.markNodeDown(nodeId);
     const systemHealth = faultDetector.getSystemHealth();
+
+    // Log to terminal for visibility
+    console.error(
+      `\n❌ [MANUAL KILL] ${node.name} (${nodeId}) has been terminated by admin!\n`
+    );
 
     res.json({
       message: `Node ${nodeId} marked as failed`,
@@ -156,9 +166,19 @@ const simulateNodeFailure = async (req, res) => {
 const simulateNodeRecovery = async (req, res) => {
   try {
     const { nodeId } = req.body;
+    const node = nodeRegistry.getNodes().find(n => n.id === nodeId);
+
+    if (!node) {
+      return res.status(404).json({ message: `Node ${nodeId} not found` });
+    }
 
     nodeRegistry.markNodeUp(nodeId);
     const systemHealth = faultDetector.getSystemHealth();
+
+    // Log to terminal for visibility
+    console.log(
+      `\n✅ [MANUAL RECOVERY] ${node.name} (${nodeId}) has been brought back online!\n`
+    );
 
     res.json({
       message: `Node ${nodeId} marked as recovered`,
@@ -170,6 +190,111 @@ const simulateNodeRecovery = async (req, res) => {
   }
 };
 
+// Helper function to perform a single booking operation
+const performBooking = async (eventId, userId, strategy) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Select node using round-robin
+    const selectedNode = loadBalancer.selectNode(strategy || "roundRobin");
+
+    // Tick logical clock
+    const timestamp = logicalClock.tick();
+
+    // Find event
+    const event = await Event.findById(eventId).session(session);
+
+    if (!event || event.status !== "active") {
+      await session.abortTransaction();
+      return {
+        success: false,
+        error: "Event not available",
+        nodeId: selectedNode.id,
+        nodeName: selectedNode.name,
+        timestamp,
+      };
+    }
+
+    // Try to book 1 seat
+    const updatedEvent = await Event.findOneAndUpdate(
+      { _id: eventId, availableSeats: { $gte: 1 } },
+      { $inc: { availableSeats: -1 } },
+      { new: true, session }
+    );
+
+    if (!updatedEvent) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        error: "No seats available",
+        nodeId: selectedNode.id,
+        nodeName: selectedNode.name,
+        timestamp,
+      };
+    }
+
+    // Update status if sold out
+    if (updatedEvent.availableSeats === 0) {
+      await Event.findByIdAndUpdate(
+        eventId,
+        { status: "sold-out" },
+        { session }
+      );
+    }
+
+    // Create booking
+    const booking = new Booking({
+      userId,
+      eventId,
+      seats: 1,
+      totalAmount: event.price,
+      status: "confirmed",
+      confirmationCode: generateConfirmationCode(),
+    });
+
+    await booking.save({ session });
+    await session.commitTransaction();
+
+    return {
+      success: true,
+      nodeId: selectedNode.id,
+      nodeName: selectedNode.name,
+      timestamp,
+      confirmationCode: booking.confirmationCode,
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+// Retry wrapper with exponential backoff for handling write conflicts
+async function bookWithRetry(eventId, userId, strategy, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await performBooking(eventId, userId, strategy);
+      return result;
+    } catch (error) {
+      const isWriteConflict = error.message && 
+        error.message.includes('Write conflict');
+      if (isWriteConflict && attempt < maxRetries) {
+        // Wait a small random delay before retrying (exponential backoff)
+        await new Promise(r => setTimeout(r, attempt * 50 + Math.random() * 50));
+        continue;
+      }
+      // Return failure result instead of throwing for non-write-conflict errors
+      return {
+        success: false,
+        error: error.message || "Booking failed",
+        timestamp: logicalClock.getTime(),
+      };
+    }
+  }
+}
+
 const simulateConcurrentBookings = async (req, res) => {
   try {
     const { eventId, numberOfRequests } = req.body;
@@ -179,86 +304,16 @@ const simulateConcurrentBookings = async (req, res) => {
     const startTime = Date.now();
 
     const bookingPromises = Array.from({ length: numRequests }, async (_, index) => {
-      const session = await mongoose.startSession();
-      session.startTransaction();
-
       try {
-        // Select node using round-robin
-        const selectedNode = loadBalancer.selectNode("roundRobin");
-
-        // Tick logical clock
-        const timestamp = logicalClock.tick();
-
-        // Find event
-        const event = await Event.findById(eventId).session(session);
-
-        if (!event || event.status !== "active") {
-          await session.abortTransaction();
-          return {
-            success: false,
-            error: "Event not available",
-            nodeId: selectedNode.id,
-            nodeName: selectedNode.name,
-            timestamp,
-          };
-        }
-
-        // Try to book 1 seat
-        const updatedEvent = await Event.findOneAndUpdate(
-          { _id: eventId, availableSeats: { $gte: 1 } },
-          { $inc: { availableSeats: -1 } },
-          { new: true, session }
-        );
-
-        if (!updatedEvent) {
-          await session.abortTransaction();
-          return {
-            success: false,
-            error: "No seats available",
-            nodeId: selectedNode.id,
-            nodeName: selectedNode.name,
-            timestamp,
-          };
-        }
-
-        // Update status if sold out
-        if (updatedEvent.availableSeats === 0) {
-          await Event.findByIdAndUpdate(
-            eventId,
-            { status: "sold-out" },
-            { session }
-          );
-        }
-
-        // Create booking
-        const booking = new Booking({
-          userId,
-          eventId,
-          seats: 1,
-          totalAmount: event.price,
-          status: "confirmed",
-          confirmationCode: generateConfirmationCode(),
-        });
-
-        await booking.save({ session });
-        await session.commitTransaction();
-
-        return {
-          success: true,
-          nodeId: selectedNode.id,
-          nodeName: selectedNode.name,
-          timestamp,
-          confirmationCode: booking.confirmationCode,
-        };
+        // Use bookWithRetry instead of direct booking
+        const result = await bookWithRetry(eventId, userId, "roundRobin");
+        return result;
       } catch (error) {
-        await session.abortTransaction();
         return {
           success: false,
           error: error.message,
           timestamp: logicalClock.getTime(),
         };
-      } finally {
-        session.endSession();
       }
     });
 

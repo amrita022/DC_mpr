@@ -16,7 +16,7 @@ const protect = (req, res, next) => {
   }
 };
 
-const adminOnly = (req, res, next) => {
+const adminOnly = async (req, res, next) => {
   try {
     // First check if user is authenticated (protect should be called before)
     if (!req.user) {
@@ -25,17 +25,17 @@ const adminOnly = (req, res, next) => {
 
     // Check if user is admin - need to fetch user from DB to get role
     const User = require("../models/User");
-    User.findById(req.user.userId).then((user) => {
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
+    const user = await User.findById(req.user.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-      if (user.role !== "admin") {
-        return res.status(403).json({ message: "Admin access required" });
-      }
+    if (user.role !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
 
-      next();
-    });
+    next();
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

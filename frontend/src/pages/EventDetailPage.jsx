@@ -39,7 +39,7 @@ export default function EventDetailPage() {
   const [seats, setSeats] = useState(1);
   const [strategy, setStrategy] = useState("roundRobin");
   const [loading, setLoading] = useState(true);
-  const [booking, setBooking] = useState(null);
+  const [bookingResult, setBookingResult] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
 
   useEffect(() => {
@@ -69,9 +69,11 @@ export default function EventDetailPage() {
         strategy,
       });
 
-      setBooking(response.data);
+      console.log("Booking Response:", response.data);
+      setBookingResult(response.data);
       toast.success("Booking confirmed!");
     } catch (error) {
+      console.error("Booking Error:", error);
       toast.error(error.response?.data?.message || "Booking failed");
     } finally {
       setBookingLoading(false);
@@ -178,7 +180,7 @@ export default function EventDetailPage() {
 
             {/* Right Column - Booking Form */}
             <div>
-              {booking ? (
+              {bookingResult ? (
                 <div className="bg-dark-card border border-green-500 border-opacity-50 rounded-card p-8 sticky top-24">
                   <div className="text-center">
                     <div className="w-16 h-16 bg-green-500 bg-opacity-20 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -187,35 +189,65 @@ export default function EventDetailPage() {
                       </svg>
                     </div>
 
-                    <h3 className="text-2xl font-bold text-white mb-2">Booking Confirmed</h3>
+                    <h3 className="text-2xl font-bold text-white mb-2">Booking Confirmed!</h3>
                     <p className="text-gray-400 mb-6">Your tickets are secured</p>
 
-                    <div className="bg-dark border border-dark-border rounded-card p-4 mb-6 text-left">
-                      <p className="text-gray-400 text-xs mb-2">CONFIRMATION CODE</p>
-                      <p className="font-mono text-2xl text-brand font-bold break-all">{booking.booking.confirmationCode}</p>
+                    {/* Confirmation Code */}
+                    <div className="bg-dark border-2 border-green-500 border-opacity-30 rounded-card p-6 mb-6 text-center">
+                      <p className="text-gray-400 text-xs mb-3 tracking-widest">CONFIRMATION CODE</p>
+                      <p className="font-mono text-4xl text-green-400 font-bold tracking-wider">
+                        {bookingResult?.booking?.confirmationCode || "LOADING..."}
+                      </p>
                     </div>
 
-                    <div className="space-y-3 mb-6 text-left text-sm">
+                    {/* Booking Details */}
+                    <div className="space-y-3 mb-6 text-left text-sm bg-dark border border-dark-border rounded-card p-4">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Handled by</span>
-                        <span className="text-white font-semibold">{booking.selectedNode}</span>
+                        <span className="text-white font-semibold">
+                          {bookingResult?.selectedNode || "Node Loading..."}
+                        </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Logical Clock</span>
-                        <span className="text-white font-semibold">#{booking.logicalClockTimestamp}</span>
+                        <span className="text-gray-400">Logical Clock Timestamp</span>
+                        <span className="text-white font-semibold">
+                          #{bookingResult?.logicalClockTimestamp ?? "N/A"}
+                        </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Processing Time</span>
-                        <span className="text-white font-semibold">{booking.processingDelay}ms</span>
+                        <span className="text-gray-400">Processing Delay</span>
+                        <span className="text-white font-semibold">
+                          {bookingResult?.processingDelay ? `${bookingResult.processingDelay}ms` : "N/A"}
+                        </span>
+                      </div>
+                      <div className="border-t border-dark-border pt-3 flex justify-between">
+                        <span className="text-gray-400">Seats Booked</span>
+                        <span className="text-white font-semibold">
+                          {bookingResult?.booking?.seats || "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-300 font-semibold">Total Amount Paid</span>
+                        <span className="text-brand text-lg font-bold">
+                          ₹{bookingResult?.booking?.totalAmount || "0"}
+                        </span>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => navigate("/bookings")}
-                      className="w-full bg-brand hover:bg-red-500 text-white font-semibold py-3 rounded-btn transition"
-                    >
-                      View My Bookings
-                    </button>
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => navigate("/bookings")}
+                        className="w-full bg-brand hover:bg-red-500 text-white font-semibold py-3 rounded-btn transition"
+                      >
+                        View My Bookings
+                      </button>
+                      <button
+                        onClick={() => setBookingResult(null)}
+                        className="w-full bg-dark border border-dark-border hover:border-brand text-white font-semibold py-3 rounded-btn transition"
+                      >
+                        Book Another
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
